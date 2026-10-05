@@ -23,6 +23,10 @@ MIN_DIFFERENCE_NORM = 1e-9
 DEFAULT_SELECTION_VERSION = "v1"
 RANDOM_STATE_VERSION = "v1"
 
+# 候选集为空时的两种原因：已处理完全部有效样本对，或数据本来就没有有效候选。
+EXHAUSTED = "exhausted"
+NO_CANDIDATES = "no_candidates"
+
 
 @dataclass(frozen=True)
 class SelectionConfig:
@@ -167,6 +171,21 @@ def build_candidates(
                     continue
                 candidates.append(Candidate(left_id=left, right_id=right, difference=difference))
     return candidates
+
+
+def reason_for_empty_candidates(
+    pool: Sequence[Sample],
+    vectors: Mapping[str, np.ndarray],
+) -> str:
+    """候选集为空时区分「已耗尽」与「本来就没有有效候选」。
+
+    忽略已处理记录后仍有同城、预处理后有实际差异的样本对，说明空候选集是这些
+    样本对都被回答或跳过造成的；否则是城市样本不足或同城样本对特征相同。
+    """
+
+    if build_candidates(pool, vectors, []):
+        return EXHAUSTED
+    return NO_CANDIDATES
 
 
 def is_tradeoff(difference: np.ndarray, *, tolerance: float = MIN_DIFFERENCE_NORM) -> bool:

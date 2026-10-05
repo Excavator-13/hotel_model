@@ -24,7 +24,14 @@ from .fitting import (
     fit,
     labeled_pairs,
 )
-from .select import DEFAULT_SEED, Question, SelectionConfig, select_next
+from .select import (
+    DEFAULT_SEED,
+    EXHAUSTED,
+    Question,
+    SelectionConfig,
+    reason_for_empty_candidates,
+    select_next,
+)
 from .state import (
     PendingQuestion,
     StateError,
@@ -33,6 +40,7 @@ from .state import (
     default_random_state,
     load_state,
     model_after_fit,
+    model_after_label,
     random_state_to_json,
     rng_from_state,
     save_state,
@@ -320,18 +328,26 @@ def _select(
     """选题并先保存待答题与抽取后的随机状态。"""
 
     rng = rng_from_state(session.state.random_state)
+    samples = session.state.samples
+    vectors = session.vectors()
     question = select_next(
-        session.state.samples,
+        samples,
         processed=session.processed(),
-        vectors=session.vectors(),
+        vectors=vectors,
         weights=session.state.model.weights,
         label_count=session.label_count(),
         rng=rng,
         config=session.state.selection,
     )
     if question is None:
-        console.write("没有可比较的候选：每个城市不足两个样本，或所有未处理的同城样本对特征相同。")
-        console.write("程序正常结束，不构造跨城市问题。")
+        if reason_for_empty_candidates(samples, vectors) == EXHAUSTED:
+            console.write("所有符合条件的同城样本对都已回答或跳过，问题已耗尽。")
+            console.write("程序正常结束，不重复提问，也不构造跨城市问题。")
+        else:
+            console.write(
+                "没有可比较的候选：每个城市不足两个样本，或所有未处理的同城样本对特征相同。"
+            )
+            console.write("程序正常结束，不构造跨城市问题。")
         return None
     return (session.with_pending(question, now, rng), question)
 
@@ -348,7 +364,12 @@ def _display(state: TrainingState, question: Question, console: Console) -> None
 
 
 def _record_answer(session: Session, answer: str, *, now: str) -> Session:
-    """先追加事件并清除待答题，原子保存后再由调用方拟合。"""
+    """先追加事件并清除待答题，原子保存后再由调用方拟合。
+
+    答案检查点必须在拟合之前就能被 ``load_state`` 读取，因此这里同时把模型的
+    落后标签数更新到最新有效标签数：权重仍是最近一次成功拟合的结果，覆盖数与
+    有效标签数保持自洽。
+    """
 
     pending = session.state.pending
     assert pending is not None
@@ -373,10 +394,13 @@ def _record_answer(session: Session, answer: str, *, now: str) -> Session:
         "asked_at": pending.asked_at,
         "answer": answer,
     }
+    events = list(session.state.events) + [event]
+    label_count = sum(1 for item in events if item.get("kind") == KIND_LABEL)
     updated = session.state.with_(
         updated_at=now,
-        events=list(session.state.events) + [event],
+        events=events,
         pending=None,
+        model=model_after_label(session.state.model, label_count),
     )
     return session.persist(updated)
 

@@ -146,6 +146,37 @@ def test_missing_vector_reports_error() -> None:
         build_candidates(samples, {"hz-1": vectors["hz-1"]}, [])
 
 
+def test_empty_candidate_reason_distinguishes_causes() -> None:
+    """空候选集要区分「已处理完全部有效对」和「本来就没有有效候选」。"""
+
+    from hotel_model.select import EXHAUSTED, NO_CANDIDATES, reason_for_empty_candidates
+
+    distinct, distinct_vectors = table(
+        row("hz-1", city="杭州", grade=3, nightly_price=300),
+        row("hz-2", city="杭州", grade=5, nightly_price=500),
+    )
+    assert reason_for_empty_candidates(distinct, distinct_vectors) == EXHAUSTED
+
+    single, single_vectors = table(row("hz-1", city="杭州", grade=3, nightly_price=300))
+    assert reason_for_empty_candidates(single, single_vectors) == NO_CANDIDATES
+
+    same = dict(
+        grade=4,
+        renovation_age_years=3,
+        ctrip_rating=4.7,
+        subway_walk_minutes=5,
+        mall_transit_minutes=10,
+        attraction_taxi_minutes=15,
+        room_area_sqm=30,
+        nightly_price=350,
+    )
+    identical, identical_vectors = table(
+        row("hz-1", city="杭州", **same),
+        row("hz-2", city="杭州", **same),
+    )
+    assert reason_for_empty_candidates(identical, identical_vectors) == NO_CANDIDATES
+
+
 def test_pair_as_pairs_rejects_same_sample() -> None:
     from hotel_model.select import as_pairs
 

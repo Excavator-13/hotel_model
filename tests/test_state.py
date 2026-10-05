@@ -22,6 +22,7 @@ from hotel_model.state import (
     content_fingerprint,
     default_random_state,
     load_state,
+    model_after_label,
     rng_from_state,
     save_state,
     state_from_dict,
@@ -259,6 +260,126 @@ def test_model_coverage_bookkeeping_matches_event_count() -> None:
     payload = state.to_dict()
     with pytest.raises(StateError, match="覆盖数"):
         state_from_dict(payload)
+
+
+def _label_event(
+    left: str,
+    right: str,
+    *,
+    label: float = 1.0,
+    answered_at: str = "2024-01-01T00:01:00+00:00",
+) -> dict[str, object]:
+    return {
+        "left_id": left,
+        "right_id": right,
+        "city": "杭州",
+        "kind": "label",
+        "label": label,
+        "answered_at": answered_at,
+    }
+
+
+def _three_sample_state() -> TrainingState:
+    return make_state(
+        make_samples(
+            [
+                row("hz-1", city="杭州", grade=3, nightly_price=300),
+                row("hz-2", city="杭州", grade=5, nightly_price=500),
+                row("hz-3", city="杭州", grade=4, nightly_price=400),
+            ]
+        )
+    )
+
+
+def test_answer_checkpoint_loads_before_first_fit(tmp_path: Path) -> None:
+    """第一个答案写盘后、拟合之前，检查点必须能独立读回。"""
+
+    state = _three_sample_state()
+    checkpoint = state.with_(
+        events=[_label_event("hz-1", "hz-2")],
+        model=model_after_label(ModelSnapshot.untrained(), 1),
+    )
+    path = tmp_path / "session.json"
+    save_state(checkpoint, path)
+
+    restored = load_state(path)
+    assert len(restored.label_events) == 1
+    assert not restored.model.trained
+    assert restored.model.weights is None
+    assert restored.model.labels_covered == 0
+    assert restored.model.lagging_labels == 1
+
+
+def test_answer_checkpoint_keeps_last_successful_model(tmp_path: Path) -> None:
+    """第二个答案写盘后、重新拟合之前，保留上一份权重并准确记录落后数。"""
+
+    state = _three_sample_state()
+    weights = np.array([0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.02, 0.01])
+    trained = ModelSnapshot(True, weights, 1, 0.3, 0)
+    checkpoint = state.with_(
+        events=[
+            _label_event("hz-1", "hz-2"),
+            _label_event("hz-1", "hz-3", label=0.5, answered_at="2024-01-01T00:02:00+00:00"),
+        ],
+        model=model_after_label(trained, 2),
+    )
+    path = tmp_path / "session.json"
+    save_state(checkpoint, path)
+
+    restored = load_state(path)
+    assert len(restored.label_events) == 2
+    assert restored.model.trained
+    assert np.array_equal(restored.model.weights, weights)
+    assert restored.model.labels_covered == 1
+    assert restored.model.lagging_labels == 1
+    assert restored.model.training_cross_entropy == pytest.approx(0.3)
+
+
+@pytest.mark.parametrize("failure_point", ["fsync", "replace"])
+def test_model_checkpoint_failure_keeps_answer_checkpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure_point: str
+) -> None:
+    """模型检查点在 fsync 或原子替换处失败时，此前的答案检查点仍可恢复。"""
+
+    from hotel_model import state as state_module
+
+    state = _three_sample_state()
+    weights = np.array([0.5, 0.4, 0.3, 0.2, 0.1, 0.05, 0.02, 0.01])
+    answer_checkpoint = state.with_(
+        events=[
+            _label_event("hz-1", "hz-2"),
+            _label_event("hz-1", "hz-3", label=0.5, answered_at="2024-01-01T00:02:00+00:00"),
+        ],
+        model=model_after_label(ModelSnapshot(True, weights, 1, 0.3, 0), 2),
+    )
+    path = tmp_path / "session.json"
+    save_state(answer_checkpoint, path)
+    original = path.read_text(encoding="utf-8")
+
+    final = answer_checkpoint.with_(model=ModelSnapshot(True, weights, 2, 0.25, 0))
+
+    if failure_point == "fsync":
+
+        def broken(fd: int) -> None:
+            raise OSError("注入的 fsync 失败")
+
+    else:
+
+        def broken(source: object, target: object) -> None:  # type: ignore[misc]
+            raise OSError("注入的替换失败")
+
+    monkeypatch.setattr(state_module.os, failure_point, broken)
+    with pytest.raises(OSError):
+        save_state(final, path)
+    monkeypatch.undo()
+
+    assert path.read_text(encoding="utf-8") == original
+    restored = load_state(path)
+    assert restored.model.labels_covered == 1
+    assert restored.model.lagging_labels == 1
+    assert len(restored.label_events) == 2
+    leftovers = [p.name for p in tmp_path.iterdir() if p.name != "session.json"]
+    assert leftovers == [], "失败后应清理临时文件"
 
 
 # --- 4.3 恢复校验 -----------------------------------------------------------

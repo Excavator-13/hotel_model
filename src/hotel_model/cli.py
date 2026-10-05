@@ -32,8 +32,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="新建或恢复一个训练会话",
         description=(
             "新建会话：hotel-model train --data hotels.csv --state session.json\n"
-            "恢复会话：hotel-model train --resume session.json [--data hotels.csv]"
+            "恢复会话：hotel-model train --resume --state session.json\n"
+            "恢复并校验数据：hotel-model train --resume --state session.json --data hotels.csv\n"
+            "`--resume` 是开关，状态文件始终由 `--state` 指定。"
         ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     train.add_argument("--data", type=Path, default=None, help="原始酒店 CSV 路径（新建时必需）")
     train.add_argument("--state", type=Path, default=None, help="训练状态 JSON 路径")
@@ -47,9 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
 def options_from_args(args: argparse.Namespace) -> TrainOptions:
     if args.resume:
         if args.state is None:
-            if args.data is None:
-                raise StateError("恢复训练需要 `--resume` 指定状态文件")
-            raise StateError("恢复训练需要 `--state` 指定状态文件")
+            raise StateError("恢复训练需要 `--state` 指定状态文件（`--resume` 只是开关）")
         return TrainOptions(
             state_path=Path(args.state),
             data_path=Path(args.data) if args.data is not None else None,

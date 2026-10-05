@@ -255,6 +255,160 @@ def test_resume_after_fit_failure_refits_and_continues(
     assert len(outcome.state.events) == 2
 
 
+class _InterruptingFit:
+    """在第 ``at_call`` 次拟合抛 KeyboardInterrupt，模拟拟合过程被中断。"""
+
+    def __init__(self, at_call: int, real) -> None:  # type: ignore[no-untyped-def]
+        self.at_call = at_call
+        self.real = real
+        self.calls = 0
+
+    def __call__(self, *args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+        self.calls += 1
+        if self.calls == self.at_call:
+            raise KeyboardInterrupt
+        return self.real(*args, **kwargs)
+
+
+def test_interrupted_first_fit_leaves_loadable_checkpoint_and_resume_refits(
+    tmp_path: Path, data_csv: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """答案已保存但第一次拟合被中断时，检查点必须可读且恢复后先重拟合。"""
+
+    state_path = tmp_path / "s.json"
+    real_fit = train_module.fit
+    monkeypatch.setattr(train_module, "fit", _InterruptingFit(1, real_fit))
+
+    outcome = run_training(
+        TrainOptions(state_path=state_path, data_path=data_csv),
+        console=ScriptedConsole(["a"]),
+        now=lambda: CLOCK,
+    )
+    assert outcome.stop_reason == "interrupted"
+    monkeypatch.undo()
+
+    # 该检查点在拟合之前写入，必须能被独立读取。
+    checkpoint = load_state(state_path)
+    assert len(checkpoint.label_events) == 1
+    assert not checkpoint.model.trained
+    assert checkpoint.model.labels_covered == 0
+    assert checkpoint.model.lagging_labels == 1
+    first_pair = tuple(sorted((checkpoint.events[0]["left_id"], checkpoint.events[0]["right_id"])))
+
+    # 恢复时先重拟合落后标签，再继续提问；已处理的对不重复。
+    console = ScriptedConsole(["b", "q"])
+    resumed = run_training(
+        TrainOptions(state_path=state_path, resume=True),
+        console=console,
+        now=lambda: CLOCK,
+    )
+    assert resumed.state.model.trained
+    assert resumed.state.model.labels_covered == 2
+    assert resumed.state.model.lagging_labels == 0
+    assert len(resumed.state.events) == 2
+    assert "先重新拟合" in console.output
+    resumed_pairs = [tuple(sorted(pair)) for pair in ask_sequence(console)]
+    assert resumed_pairs
+    assert first_pair not in resumed_pairs
+
+
+def test_answer_checkpoint_after_later_answer_keeps_previous_weights(
+    tmp_path: Path, data_csv: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """第二个答案写盘后、拟合被中断：保留上一份权重，落后数精确为 1。"""
+
+    state_path = tmp_path / "s.json"
+    real_fit = train_module.fit
+    monkeypatch.setattr(train_module, "fit", _InterruptingFit(2, real_fit))
+
+    outcome = run_training(
+        TrainOptions(state_path=state_path, data_path=data_csv),
+        console=ScriptedConsole(["a", "b"]),
+        now=lambda: CLOCK,
+    )
+    assert outcome.stop_reason == "interrupted"
+    monkeypatch.undo()
+
+    checkpoint = load_state(state_path)
+    assert len(checkpoint.label_events) == 2
+    assert checkpoint.model.trained
+    assert checkpoint.model.labels_covered == 1
+    assert checkpoint.model.lagging_labels == 1
+    # 与第一次成功拟合的结果一致。
+    assert np.allclose(checkpoint.model.weights, outcome.state.model.weights)
+
+
+def test_failed_answer_save_keeps_previous_checkpoint(
+    tmp_path: Path, data_csv: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """答案保存失败时，之前的完整状态必须保持不变且可读。"""
+
+    state_path = tmp_path / "s.json"
+    real_save = train_module.save_state
+
+    def flaky_save(state, path):  # type: ignore[no-untyped-def]
+        if state.events:
+            raise OSError("注入的答案保存失败")
+        return real_save(state, path)
+
+    monkeypatch.setattr(train_module, "save_state", flaky_save)
+    with pytest.raises(OSError):
+        run_training(
+            TrainOptions(state_path=state_path, data_path=data_csv),
+            console=ScriptedConsole(["a"]),
+            now=lambda: CLOCK,
+        )
+    monkeypatch.undo()
+
+    checkpoint = load_state(state_path)
+    assert checkpoint.events == ()
+    assert checkpoint.pending is not None
+    assert not checkpoint.model.trained
+    assert checkpoint.model.lagging_labels == 0
+
+
+def test_failed_model_save_keeps_answer_checkpoint_and_resume_recovers(
+    tmp_path: Path, data_csv: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """模型保存失败时事件已持久化；恢复必须从答案检查点重拟合。"""
+
+    state_path = tmp_path / "s.json"
+    real_save = train_module.save_state
+
+    def flaky_save(state, path):  # type: ignore[no-untyped-def]
+        if state.model.trained and state.model.lagging_labels == 0:
+            raise OSError("注入的模型保存失败")
+        return real_save(state, path)
+
+    monkeypatch.setattr(train_module, "save_state", flaky_save)
+    with pytest.raises(OSError):
+        run_training(
+            TrainOptions(state_path=state_path, data_path=data_csv),
+            console=ScriptedConsole(["a"]),
+            now=lambda: CLOCK,
+        )
+    monkeypatch.undo()
+
+    checkpoint = load_state(state_path)
+    assert len(checkpoint.label_events) == 1
+    assert not checkpoint.model.trained
+    assert checkpoint.model.lagging_labels == 1
+    first_pair = tuple(sorted((checkpoint.events[0]["left_id"], checkpoint.events[0]["right_id"])))
+
+    console = ScriptedConsole(["b", "q"])
+    resumed = run_training(
+        TrainOptions(state_path=state_path, resume=True),
+        console=console,
+        now=lambda: CLOCK,
+    )
+    assert resumed.state.model.trained
+    assert resumed.state.model.labels_covered == 2
+    assert resumed.state.model.lagging_labels == 0
+    assert "先重新拟合" in console.output
+    resumed_pairs = [tuple(sorted(pair)) for pair in ask_sequence(console)]
+    assert first_pair not in resumed_pairs
+
+
 def test_resume_keeps_pending_question_and_direction(tmp_path: Path, data_csv: Path) -> None:
     state_path = tmp_path / "s.json"
     first = ScriptedConsole(["q"])

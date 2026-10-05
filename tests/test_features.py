@@ -179,3 +179,27 @@ def test_vector_is_finite_for_extreme_inputs() -> None:
         )
     )
     assert np.all(np.isfinite(vector))
+
+
+@pytest.mark.parametrize(
+    ("field", "center", "index", "sign"),
+    [
+        ("room_area_sqm", FEATURE_CONSTANTS["area_center_sqm"], 6, 1.0),
+        ("nightly_price", FEATURE_CONSTANTS["price_center"], 7, -1.0),
+    ],
+)
+def test_smallest_positive_subnormal_still_has_finite_log_feature(
+    field: str, center: float, index: int, sign: float
+) -> None:
+    """契约允许的最小正数不能因为除法下溢而失去对数定义域。"""
+
+    smallest = 5e-324
+    overrides: dict[str, object] = {"room_area_sqm": 25, "nightly_price": 300}
+    overrides[field] = smallest
+    sample = make_samples([row("hz-1", **overrides)])[0]
+    assert getattr(sample, field) == smallest
+
+    vector = to_features(sample)
+    assert np.all(np.isfinite(vector))
+    expected = sign * (math.log(smallest) - math.log(center))
+    assert vector[index] == pytest.approx(expected)

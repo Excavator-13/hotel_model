@@ -81,6 +81,82 @@ def test_resume_requires_state(tmp_path: Path) -> None:
     assert parsed.data_path is None
 
 
+def test_resume_without_state_names_the_state_argument() -> None:
+    """省略状态文件时，错误必须点名真正提供它的参数。"""
+
+    out, err = io.StringIO(), io.StringIO()
+    code = main(["train", "--resume"], stdout=out, stderr=err)
+    assert code == 2
+    assert "--state" in err.getvalue()
+    assert "--resume" in err.getvalue()
+
+
+def _train_help_commands() -> list[str]:
+    """从 `train --help` 中取出所有 hotel-model 命令示例。"""
+
+    import argparse
+    import re
+
+    parser = build_parser()
+    subparsers = next(
+        action
+        for action in parser._actions
+        if isinstance(action, argparse._SubParsersAction)
+    )
+    text = io.StringIO()
+    subparsers.choices["train"].print_help(text)
+    # 跳过 argparse 的 usage 行，只取说明中的命令示例。
+    lines = [
+        line for line in text.getvalue().splitlines() if not line.strip().startswith("usage:")
+    ]
+    return re.findall(r"hotel-model\s+train[^\n]*", "\n".join(lines))
+
+
+def test_train_help_examples_are_parseable_and_use_state() -> None:
+    """公开帮助里的示例必须是解析器接受的命令，恢复示例必须给出 `--state`。"""
+
+    import shlex
+
+    parser = build_parser()
+    commands = _train_help_commands()
+    assert commands, "帮助应包含命令示例"
+    resume_commands = [command for command in commands if "--resume" in command]
+    assert resume_commands, "帮助应包含恢复示例"
+    for command in resume_commands:
+        assert "--state" in command, f"恢复示例缺少 `--state`：{command}"
+        parsed = parser.parse_args(shlex.split(command.strip())[1:])
+        assert parsed.command == "train"
+        assert parsed.resume and parsed.state is not None
+    for command in commands:
+        parsed = parser.parse_args(shlex.split(command.strip())[1:])
+        assert parsed.command == "train"
+
+
+def test_train_help_resume_examples_run_against_state_file(
+    tmp_path: Path, hz_city_csv: Path
+) -> None:
+    """帮助里的每个恢复示例都要能真正加载一个已有状态文件。"""
+
+    import shlex
+
+    state_path = tmp_path / "session.json"
+    run_training(
+        TrainOptions(state_path=state_path, data_path=hz_city_csv),
+        console=ScriptedConsole(["a", "q"]),
+        now=fixed_clock,
+    )
+
+    replacements = {"session.json": str(state_path), "hotels.csv": str(hz_city_csv)}
+    examples = [c for c in _train_help_commands() if "--resume" in c]
+    assert examples
+    for command in examples:
+        argv = [replacements.get(token, token) for token in shlex.split(command.strip())[1:]]
+        argv.append("--quiet")
+        out, err = io.StringIO(), io.StringIO()
+        code = main(argv, stdin=io.StringIO("b\nq\n"), stdout=out, stderr=err)
+        assert code == 0, f"{command} -> {err.getvalue()}"
+
+
 def test_resume_with_data_is_optional(tmp_path: Path) -> None:
     parser = build_parser()
     parsed = options_from_args(
@@ -236,7 +312,10 @@ def test_ctrl_c_does_not_create_answer(tmp_path: Path, hz_city_csv: Path) -> Non
     assert outcome.state.pending is not None
 
 
-def test_candidate_exhaustion_reports_and_stops(tmp_path: Path) -> None:
+@pytest.mark.parametrize("answer", ["a", "t", "s"])
+def test_candidate_exhaustion_reports_processed_pairs(tmp_path: Path, answer: str) -> None:
+    """两家不同样本的题被处理后，说明必须是「问题已耗尽」。"""
+
     csv_path = write_csv(
         tmp_path / "two.csv",
         [
@@ -244,14 +323,16 @@ def test_candidate_exhaustion_reports_and_stops(tmp_path: Path) -> None:
             row("hz-2", city="杭州", grade=5, nightly_price=500),
         ],
     )
-    console = ScriptedConsole(["a", "a", "a"])
+    console = ScriptedConsole([answer, "a", "a"])
     outcome = run_training(
         TrainOptions(state_path=tmp_path / "s.json", data_path=csv_path),
         console=console,
         now=fixed_clock,
     )
     assert outcome.stop_reason == "exhausted"
-    assert "没有可比较的候选" in console.output
+    assert "问题已耗尽" in console.output
+    assert "不重复提问" in console.output
+    assert "没有可比较的候选" not in console.output
     assert len(outcome.state.events) == 1
     assert outcome.state.pending is None
 
@@ -269,6 +350,7 @@ def test_single_sample_city_reports_no_candidate(tmp_path: Path) -> None:
     )
     assert outcome.stop_reason == "exhausted"
     assert "没有可比较的候选" in console.output
+    assert "问题已耗尽" not in console.output
 
 
 def test_identical_feature_pairs_exhaust_candidates(tmp_path: Path) -> None:
@@ -294,6 +376,7 @@ def test_identical_feature_pairs_exhaust_candidates(tmp_path: Path) -> None:
     )
     assert outcome.stop_reason == "exhausted"
     assert "没有可比较的候选" in console.output
+    assert "问题已耗尽" not in console.output
 
 
 def test_invalid_data_rejected_before_state_created(tmp_path: Path) -> None:

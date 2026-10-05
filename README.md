@@ -182,7 +182,7 @@ loss(w) = mean(logaddexp(0, w·d) - y * (w·d)) + lambda/2 * (w·w)，  约束 w
 conda run -n hotel-model python -m pytest
 ```
 
-当前基线：**228 passed**（Python 3.12.14 / NumPy 2.5.3 / SciPy 1.18.1 / pytest 9.1.1）。
+当前基线：**244 passed**（Python 3.12.14 / NumPy 2.5.3 / SciPy 1.18.1 / pytest 9.1.1）。
 
 测试覆盖数据校验、v1 特征、标签方向与梯度、约束拟合与失败处理、候选与主动选题、状态指纹与原子写入、恢复校验、终端训练循环与诊断。
 

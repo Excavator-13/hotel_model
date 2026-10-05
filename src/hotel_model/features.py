@@ -102,8 +102,10 @@ def to_features(sample: Sample, config: FeatureConfig | None = None) -> np.ndarr
     subway = -math.log1p(sample.subway_walk_minutes / scale)
     mall = -math.log1p(sample.mall_transit_minutes / scale)
     attraction = -math.log1p(sample.attraction_taxi_minutes / scale)
-    area = math.log(sample.room_area_sqm / constants["area_center_sqm"])
-    price = -math.log(sample.nightly_price / constants["price_center"])
+    # `log(x / center)` 在 x 为极小的正数时，除法先下溢为零而丢失定义域；
+    # 用等价的 `log(x) - log(center)` 保证契约允许的全部正数都有有限特征。
+    area = math.log(sample.room_area_sqm) - math.log(constants["area_center_sqm"])
+    price = math.log(constants["price_center"]) - math.log(sample.nightly_price)
 
     vector = np.array(
         [grade, renovation, rating, subway, mall, attraction, area, price],

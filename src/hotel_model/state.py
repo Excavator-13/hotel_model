@@ -488,6 +488,16 @@ def save_state(state: TrainingState, path: str | Path) -> Path:
     return resolved
 
 
+def model_after_label(previous: ModelSnapshot, label_count: int) -> ModelSnapshot:
+    """记录新标签后的模型快照。
+
+    保留最近成功拟合的权重与覆盖数，只把 ``lagging_labels`` 更新为尚未覆盖的
+    有效标签数。答案检查点在拟合之前写盘，必须自洽才能被恢复读取。
+    """
+
+    return replace(previous, lagging_labels=max(int(label_count) - previous.labels_covered, 0))
+
+
 def model_after_fit(
     previous: ModelSnapshot,
     result: FitResult,
@@ -503,7 +513,7 @@ def model_after_fit(
             training_cross_entropy=result.training_cross_entropy,
             lagging_labels=max(label_count - int(result.labels_covered), 0),
         )
-    return replace(previous, lagging_labels=max(label_count - previous.labels_covered, 0))
+    return model_after_label(previous, label_count)
 
 
 def lagging_count(state: TrainingState) -> int:
