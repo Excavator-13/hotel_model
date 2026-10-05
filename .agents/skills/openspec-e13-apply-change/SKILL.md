@@ -1,20 +1,23 @@
 ---
-name: openspec-apply-change
-description: Implement tasks from an OpenSpec change. Use when the user wants to start implementing, continue implementation, or work through tasks.
+name: openspec-e13-apply-change
+description: Implement tasks from an OpenSpec change and persist implementation notes for independent e13 verification. Use when the user wants to start implementing, continue implementation, or work through tasks.
 allowed-tools: Bash(openspec:*)
 license: MIT
 compatibility: Requires openspec CLI.
 metadata:
   author: openspec
+  modifiedBy: e13
   version: "1.0"
   generatedBy: "1.13.0"
 ---
 
 Implement tasks from an OpenSpec change.
 
+**Verification handoff**: Maintain `<changeRoot>/implementation-notes.md` for the model running `openspec-e13-verify-change`. This is an apply-owned handoff, not a schema artifact or acceptance authority. Never edit `<changeRoot>/verification.md`, set a verification verdict, or mark findings resolved. Task completion must be followed by independent verification before archive.
+
 **Store selection:** If the user names a store (a store is a standalone OpenSpec repo registered on this machine) or the work lives in one, run `openspec store list --json` to discover registered store ids, then pass `--store <id>` on the commands that read or write specs and changes (`new change`, `status`, `instructions`, `list`, `show`, `validate`, `archive`, `doctor`, `context`, `schemas`, `view`). Once selected, treat `--store <id>` as sticky for the rest of the workflow. Every unscoped example of those commands below is shorthand: before running it, append the flag. For example, run `openspec status --change "<name>" --json --store "<id>"`, not the unscoped form shown below. Other commands do not take the flag. Hints printed by commands already carry the flag; keep it on follow-ups. Without a store, commands act on the nearest local `openspec/` root.
 
-**Input**: Optionally specify a change name (e.g., `/openspec-apply-change add-auth`). If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
+**Input**: Optionally specify a change name (e.g., `/openspec-e13-apply-change add-auth`). If omitted, check if it can be inferred from conversation context. If vague or ambiguous you MUST prompt for available changes.
 
 **Steps**
 
@@ -25,7 +28,7 @@ Implement tasks from an OpenSpec change.
    - Auto-select if only one active change exists
    - If ambiguous, run `openspec list --json` to get available changes and ask the user to select one
 
-   Always announce: "Using change: <name>" and how to override (e.g., `/openspec-apply-change <other>`).
+   Always announce: "Using change: <name>" and how to override (e.g., `/openspec-e13-apply-change <other>`).
 
 2. **Check status to understand the schema**
    ```bash
@@ -52,7 +55,7 @@ Implement tasks from an OpenSpec change.
 
    **Handle states:**
    - If `state: "blocked"` (missing artifacts): show message, suggest using `/openspec-continue-change` (if it is not installed, run `openspec status --change "<name>" --json` to see the next artifact and `openspec instructions <artifact-id> --change "<name>" --json` for how to create it)
-   - If `state: "all_done"`: congratulate, suggest archive
+   - If `state: "all_done"`: do not implement checked tasks again; read the context and existing handoff, refresh notes only from what you can establish this run, then direct the user to `openspec-e13-verify-change`
    - Otherwise: proceed to implementation
 
    Treat `context` as a required prompt-level input. Read and consider it, and
@@ -73,6 +76,7 @@ Implement tasks from an OpenSpec change.
 4. **Read context files**
 
    Read every file path listed under `contextFiles` from the apply instructions output.
+   Also read any existing `<changeRoot>/implementation-notes.md` so resumed work preserves relevant implementation context and reminders.
    The files depend on the schema being used:
    - **spec-driven**: proposal, specs, design, tasks
    - Other schemas: follow the contextFiles from CLI output
@@ -104,12 +108,54 @@ Implement tasks from an OpenSpec change.
    - Error or blocker encountered → report and wait for guidance
    - User interrupts
 
-7. **On completion or pause, show status**
+7. **Persist the verification handoff on completion or pause**
+
+   Write or update `<changeRoot>/implementation-notes.md` before the final status, including when apply is blocked or already `all_done`. Use the CLI-returned `changeRoot`, even when planning lives in a separate store. If it cannot be resolved or the file cannot be written, report that limitation explicitly.
+
+   Keep the notes concise and grounded in this implementation. Preserve still-relevant notes from earlier sessions; remove or explicitly supersede outdated ones. Distinguish checks run this session from historical results, and do not relabel old results as current. Include:
+   - Change, schema, selected store when applicable, actual implementation project root(s), update time, and implementation revision with a dirty-worktree note when Git is available.
+   - Implemented tasks and requirements/scenarios mapped to code and test paths, plus non-obvious implementation decisions within the approved artifacts.
+   - Checks actually run: exact command, working directory, necessary non-secret setup, result, and decisive output or evidence location. List failed, skipped, or blocked checks honestly.
+   - Verification reminders: fragile paths, edge cases, integration points, reproduction steps, known limitations, missing coverage, and unresolved planning or environment blockers. Give artifact and file references where possible; say `None identified` when there are no reminders.
+   - Current task progress and why work paused, if applicable. Notes cannot authorize deferred behavior, scope exceptions, or weaker acceptance criteria.
+
+   Suggested structure:
+
+   ```markdown
+   # Implementation Notes
+
+   - Change: <name>
+   - Schema: <schema>
+   - Store: <selected id, or local>
+   - Implementation roots: <absolute project paths>
+   - Updated: <timestamp>
+   - Implementation revision: <commit and dirty-worktree note, or unavailable>
+   - Progress: <N/M tasks complete; completion or pause reason>
+
+   ## Implementation Map
+
+   | Task / requirement / scenario | Code and tests | Decisions / context |
+   | ----------------------------- | -------------- | ------------------- |
+
+   ## Checks Run
+
+   | Command | Working directory / setup | Result / evidence | Run time or revision |
+   | ------- | ------------------------- | ----------------- | -------------------- |
+
+   ## Verification Reminders
+
+   <concrete reminders and unverified behavior, or None identified>
+   ```
+
+   Do not copy runtime context or operation guidance verbatim, include credentials, or claim independent verification. These notes help the verifier locate evidence; they do not prove conformance.
+
+8. **On completion or pause, show status**
 
    Display:
    - Tasks completed this session
    - Overall progress: "N/M tasks complete"
-   - If all done: suggest archive
+   - Handoff path and the important reminders for the verification model
+   - If all done: direct the user to `$openspec-e13-verify-change <name>` (Codex) or `/openspec-e13-verify-change <name>` (other agents)
    - If paused: explain why and wait for guidance
 
 **Output During Implementation**
@@ -140,7 +186,10 @@ Working on task 4/7: <task description>
 - [x] Task 2
 ...
 
-All tasks complete! You can archive this change with `/openspec-archive-change`.
+Implementation notes: <changeRoot>/implementation-notes.md
+Verification reminders: <concise reminders, or None identified>
+
+All tasks complete. Run `/openspec-e13-verify-change <change-name>` for independent verification before archive.
 ```
 
 **Output On Pause (Issue Encountered)**
@@ -154,6 +203,8 @@ All tasks complete! You can archive this change with `/openspec-archive-change`.
 
 ### Issue Encountered
 <description of the issue>
+
+**Handoff:** <changeRoot>/implementation-notes.md (includes progress and blockers)
 
 **Options:**
 1. <option 1>
@@ -175,6 +226,8 @@ What would you like to do?
 - Only mark a task `- [x]` when its specified behavior is fully implemented, not when it is partially done or deferred
 - Use contextFiles from CLI output, don't assume specific file names
 - Do not use context or operation guidance as proof that a task is complete
+- Persist implementation notes on completion or pause; never use them to waive requirements or replace independent verification
+- Never edit the verification report or present apply checks as an independent verdict
 - Apply relevant project context; report conflicts with controlling workflow inputs
 - Consider every guidance entry; explain any inapplicable or conflicting advice
 - Do not copy runtime context or operation guidance into implementation files or planning artifacts

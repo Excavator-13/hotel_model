@@ -1,16 +1,19 @@
 ---
-name: openspec-archive-change
-description: Archive a completed change in the experimental workflow. Use when the user wants to finalize and archive a change after implementation is complete.
+name: openspec-e13-archive-change
+description: Archive an OpenSpec change after a current independent e13 verification PASS. Use when the user wants to finalize and archive a verified implementation.
 allowed-tools: Bash(openspec:*)
 license: MIT
 compatibility: Requires openspec CLI.
 metadata:
   author: openspec
+  modifiedBy: e13
   version: "1.0"
   generatedBy: "1.13.0"
 ---
 
 Archive a completed change in the experimental workflow.
+
+**Verification gate**: Before syncing main specs or moving the change, require a current `PASS` from `openspec-e13-verify-change` in `<changeRoot>/verification.md`. Task checkboxes and apply/repair checks cannot substitute for that verdict. This is a skill-level gate; direct CLI archive commands do not enforce it.
 
 **Store selection:** If the user names a store (a store is a standalone OpenSpec repo registered on this machine) or the work lives in one, run `openspec store list --json` to discover registered store ids, then pass `--store <id>` on the commands that read or write specs and changes (`new change`, `status`, `instructions`, `list`, `show`, `validate`, `archive`, `doctor`, `context`, `schemas`, `view`). Once selected, treat `--store <id>` as sticky for the rest of the workflow. Every unscoped example of those commands below is shorthand: before running it, append the flag. For example, run `openspec status --change "<name>" --json --store "<id>"`, not the unscoped form shown below. Other commands do not take the flag. Hints printed by commands already carry the flag; keep it on follow-ups. Without a store, commands act on the nearest local `openspec/` root.
 
@@ -30,7 +33,7 @@ Archive a completed change in the experimental workflow.
    When prompting, show only active changes (not already archived).
    Include the schema used for each change if available.
 
-   Always announce: "Using change: <name>" and how to override (e.g., `/openspec-archive-change <other>`).
+   Always announce: "Using change: <name>" and how to override (e.g., `/openspec-e13-archive-change <other>`).
 
    **Load current archive inputs before the existing archive checks:**
 
@@ -39,7 +42,7 @@ Archive a completed change in the experimental workflow.
    openspec instructions archive --change "<name>" --json
    ```
    Keep the same selected-root flags on this command. This lookup is advisory and
-   optional: it only supplies extra prompt inputs, so it must never block archiving.
+   optional: it only supplies extra prompt inputs, so its failure must never itself block archiving.
    If it exits non-zero or returns invalid JSON — for example on an older CLI that
    does not support this command yet — continue the archive workflow with no
    context and no operation guidance. Do not report an error and do not stop.
@@ -67,6 +70,12 @@ Archive a completed change in the experimental workflow.
    - `schemaName`: The workflow being used
    - `planningHome`, `changeRoot`, `artifactPaths`, and `actionContext`: path and scope context
    - `artifacts`: List of artifacts with their status (`done`, `skipped`, or other)
+
+   **Require current independent verification before proceeding:**
+   - Read `<changeRoot>/verification.md` using the resolved path. Require that it identifies this change, records `Verdict: PASS`, and has no unresolved findings (`pending`, `addressed-awaiting-verification`, or `blocked`).
+   - Compare its `Verification Basis` with the current planning artifacts and implementation project(s), including relevant dirty/untracked changes and additions/deletions. Use the report's recorded roots and snapshot method; do not assume the planning store contains the implementation. Unrelated work outside the verified scope does not invalidate a report.
+   - If the report is missing, belongs to another change/project, is not `PASS`, lacks a reproducible basis, or relevant inputs changed or cannot be compared, stop before any main-spec writes or archive move. Explain what is missing and direct the user to `$openspec-e13-verify-change <name>` (Codex) or `/openspec-e13-verify-change <name>` (other agents). Pending implementation findings can first go through `openspec-e13-fix-change`.
+   - Never rewrite the report, infer `PASS` from task completion, or treat confirmation of an incomplete-artifact/task warning as satisfying this gate.
 
    **If any artifacts are neither `done` nor `skipped`** (skipped artifacts satisfy the requirement - the change declares skip_specs):
    - Display warning listing incomplete artifacts
@@ -129,6 +138,8 @@ Archive a completed change in the experimental workflow.
 
 5. **Perform the archive**
 
+   Confirm the verification gate still holds immediately before the move. The main-spec sync performed by step 4 is expected; if it also changed inputs covered by the verification basis, or any other relevant input changed, stop and request re-verification. Preserve both `implementation-notes.md` (if present) and `verification.md` by moving the entire change directory.
+
    Create an `archive` directory under `planningHome.changesDir` if it doesn't exist:
    ```bash
    mkdir -p "<planningHome.changesDir>/archive"
@@ -151,6 +162,7 @@ Archive a completed change in the experimental workflow.
    - Schema that was used
    - Archive location
    - Whether specs were synced (if applicable)
+   - Verification verdict and report location in the archive
    - Note about any warnings (incomplete artifacts/tasks)
 
 **Output On Success**
@@ -162,6 +174,7 @@ Archive a completed change in the experimental workflow.
 **Schema:** <schema-name>
 **Archived to:** the archive path derived from `planningHome.changesDir`/<target-name>/
 **Specs:** <"✓ Synced to main specs" only if the step 4 verification passed; otherwise "No delta specs" or "Sync skipped">
+**Verification:** PASS (<archive-path>/verification.md)
 
 <"All artifacts complete. All tasks complete." — or, if archived with warnings, list them instead (e.g. "Archived with 2 incomplete tasks")>
 ```
@@ -169,7 +182,7 @@ Archive a completed change in the experimental workflow.
 **Guardrails**
 - Announce the selected change; prompt for selection when it is ambiguous
 - Use artifact graph (openspec status --json) for completion checking
-- Don't block archive on warnings - just inform and confirm
+- A current independent `PASS` is required; incomplete-artifact/task warnings still use the existing confirmation flow after that gate passes
 - Preserve .openspec.yaml when moving to archive (it moves with the directory)
 - Show clear summary of what happened
 - If sync is requested, run the `openspec-sync-specs` workflow inline (agent-driven)
@@ -177,6 +190,6 @@ Archive a completed change in the experimental workflow.
 - If delta specs exist, always run the sync assessment and show the combined summary before prompting
 - Apply relevant runtime context and report conflicts; operation guidance remains advisory
 - Consider every guidance entry and explain any inapplicable or conflicting advice
-- Existing CLI checks, resolved paths, prompts, and command contracts are unchanged
+- Preserve upstream CLI checks, resolved paths, prompts, and command contracts in addition to the e13 verification gate
 - Artifact rules constrain only the specs being written and are never operation guidance
 - Never copy runtime context, operation guidance, or artifact-rule text verbatim into output files

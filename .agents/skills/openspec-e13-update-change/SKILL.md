@@ -1,11 +1,12 @@
 ---
-name: openspec-update-change
+name: openspec-e13-update-change
 description: Update an OpenSpec change by revising its existing planning artifacts and keeping them coherent with one another. Use when the user wants to revise a change's plan, fold new decisions into it, or reconcile its artifacts after an edit. Never edits code.
 allowed-tools: Bash(openspec:*)
 license: MIT
 compatibility: Requires openspec CLI.
 metadata:
   author: openspec
+  modifiedBy: e13
   version: "1.0"
   generatedBy: "1.13.0"
 ---
@@ -35,7 +36,7 @@ Revise a change's existing planning artifacts and keep them coherent. Never edit
 
    Mark the most recently modified change as "(Recommended)" since it's likely what the user wants to update.
 
-   Always announce: "Using change: <name>" and how to override (e.g., `/openspec-update-change <other>`).
+   Always announce: "Using change: <name>" and how to override (e.g., `/openspec-e13-update-change <other>`).
 
 2. **Get the change's artifacts**
    ```bash
@@ -59,6 +60,7 @@ Revise a change's existing planning artifacts and keep them coherent. Never edit
    - Read the artifact(s) the request touches and the change's other existing artifacts.
    - Apply the requested edit. Then check every other existing artifact against it - in ANY direction: an edit to a later artifact may require revising an earlier one, not only the other way around. Build order is a useful reading order, not a constraint on which artifacts may be revised.
    - Note everything that is now inconsistent, missing, or contradictory.
+   - If a revision changes behavior already implemented, include the affected task text and reopening its checkbox in the proposed artifact edits so apply can see the remaining work. A prior verification verdict applies to its recorded inputs and cannot establish conformance to revised artifacts. Leave `implementation-notes.md` and `verification.md` to their owning workflows.
    - Revise only files that already exist (`existingOutputPaths`). Do NOT create artifacts that don't exist yet, and do NOT invent new files under a glob artifact - note them and point the user to `/openspec-continue-change` to create them.
    - If the change is already coherent, say so and make no edits.
 
@@ -72,8 +74,8 @@ Revise a change's existing planning artifacts and keep them coherent. Never edit
 
 6. **Point to the next step (guidance only - NEVER act on it)**
    - Artifacts still missing -> suggest `/openspec-continue-change` to create them.
-   - Change already implemented (tasks checked off / already applied) -> the code may no longer match the revised plan; suggest `/openspec-apply-change` to carry the delta into code.
-   - Everything done and implemented -> suggest `/openspec-archive-change`.
+   - Revised plan requires implementation work -> suggest `/openspec-e13-apply-change` to carry the delta into code.
+   - Everything implemented -> suggest `/openspec-e13-verify-change`; only a current independent `PASS` permits `/openspec-e13-archive-change`.
 
 **Output**
 
@@ -83,7 +85,7 @@ After each invocation, show:
 - Where the change stands and the recommended next command
 
 **Guardrails**
-- Planning artifacts only - NEVER edit implementation code. If the revised plan implies code changes, stop and point to `/openspec-apply-change`.
+- Planning artifacts only - NEVER edit implementation code. If the revised plan implies code changes, stop and point to `/openspec-e13-apply-change`.
 - Use the artifact ids and paths reported by `openspec status`; never branch on hardcoded artifact names.
 - Edit only the concrete files in `existingOutputPaths`; never write to a glob `resolvedOutputPath`.
 - Do not advance the build frontier: no new artifacts, no new files under glob artifacts - that is `/openspec-continue-change`'s job.

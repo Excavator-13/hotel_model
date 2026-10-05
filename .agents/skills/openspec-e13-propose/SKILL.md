@@ -1,11 +1,12 @@
 ---
-name: openspec-propose
+name: openspec-e13-propose
 description: Propose a new change with all artifacts generated in one step. Use when the user wants to quickly describe what they want to build and get a complete proposal with design, specs, and tasks ready for implementation.
 allowed-tools: Bash(openspec:*)
 license: MIT
 compatibility: Requires openspec CLI.
 metadata:
   author: openspec
+  modifiedBy: e13
   version: "1.0"
   generatedBy: "1.13.0"
 ---
@@ -141,7 +142,7 @@ After completing all artifacts, summarize:
 - Change name and location
 - List of artifacts created with brief descriptions, plus any conditional artifact you skipped and why
 - What's ready: "All artifacts needed for implementation are ready."
-- Prompt: "The artifacts are ready for review. When you are ready, run `/openspec-apply-change` or ask me to apply this change."
+- Prompt: "The artifacts are ready for review. When you are ready, run `/openspec-e13-apply-change` or ask me to apply this change."
 
 **Artifact Creation Guidelines**
 

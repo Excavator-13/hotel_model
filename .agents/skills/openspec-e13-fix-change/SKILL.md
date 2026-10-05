@@ -41,7 +41,7 @@ Repair implementation defects recorded by `openspec-e13-verify-change`, using th
    - `Category: implementation`; and
    - `Repair status: pending`.
 
-   Never implement a `planning` or `environment` finding. Planning findings require `$openspec-update-change (Codex) or /openspec-update-change (other agents)` and a subsequent implementation decision. Environment findings require the stated environment condition to be resolved.
+   Never implement a `planning` or `environment` finding. Planning findings require `$openspec-e13-update-change` (Codex) or `/openspec-e13-update-change` (other agents) and a subsequent implementation decision. Environment findings require the stated environment condition to be resolved.
 
    Process independent eligible findings until all are addressed or a blocker prevents further safe progress.
 

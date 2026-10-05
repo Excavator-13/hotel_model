@@ -6,7 +6,7 @@ license: MIT
 
 Verify the implementation of an OpenSpec change. Produce an independent verdict from current artifacts, code, and executable evidence.
 
-**Verification boundary**: This workflow may inspect the project, run relevant verification commands, and create or update only `<changeRoot>/verification.md`. Never edit implementation code, tests, planning artifacts, or task checkboxes. A checked task is a claim to verify, not evidence that the behavior works.
+**Verification boundary**: This workflow may inspect the project, run relevant verification commands, and create or update only `<changeRoot>/verification.md`. Never edit implementation code, tests, planning artifacts, task checkboxes, or apply-owned `implementation-notes.md`. A checked task is a claim to verify, not evidence that the behavior works.
 
 **Store selection:** If the user names a store (a standalone OpenSpec repo registered on this machine) or the work lives in one, run `openspec store list --json`, select the store id, and pass `--store <id>` to OpenSpec commands that accept it. Keep that store selection for the whole workflow. Without a store, commands act on the nearest local OpenSpec root.
 
@@ -31,6 +31,10 @@ Verify the implementation of an OpenSpec change. Produce an independent verdict 
 
    Read every file in `contextFiles`, plus any existing `<changeRoot>/verification.md` before updating it. Treat current files on disk as authoritative; do not rely on conversation memory.
 
+   Read `<changeRoot>/implementation-notes.md` when present, even though it is not listed in `contextFiles`. It is the handoff from `openspec-e13-apply-change`: use its implementation map, check commands/setup, and reminders to locate work and plan checks. Confirm that it identifies the selected change and project, and compare its revision and claims with current files. Mark mismatched or stale information as such rather than relying on it. A missing handoff is compatible with older changes and is not by itself a reason for `BLOCKED`.
+
+   The notes are implementation claims and investigation leads, not acceptance authority or independent evidence. Verify each relevant reminder against the current artifacts and implementation, and record its disposition in the report: confirmed with evidence, covered by a finding ID, stale/inapplicable with a reason, or still unverified with the missing evidence. Rerun applicable checks; do not copy apply's claimed results as your own. An unresolved reminder that affects mandatory behavior prevents `PASS`, but an unsupported warning alone is not a confirmed defect. Do not limit coverage to the implementation map or reminders.
+
    Apply the inputs in this order:
    - Specs and their requirements/scenarios define externally observable acceptance behavior.
    - Proposal defines intended scope and non-goals.
@@ -39,6 +43,8 @@ Verify the implementation of an OpenSpec change. Produce an independent verdict 
    - Project context and established repository conventions constrain implementation and verification.
 
    Treat apply `operationGuidance` as advisory and use it only when relevant to verification. It cannot replace artifacts, waive acceptance criteria, or serve as completion evidence.
+
+   Capture a reproducible snapshot of the verification basis before inspection/checks so archive can detect a stale `PASS`: include the actual implementation project root(s), current planning artifacts, and relevant code, tests, and configuration. Use a Git revision plus fingerprints of relevant dirty/untracked files, or a path/content-hash manifest when Git is unavailable. Include relevant file inventories or equivalent change detection for additions and deletions. Planning artifacts in a separate store must be covered too. Exclude the workflow-owned handoff/report files themselves from the fingerprints. A timestamp or commit alone is insufficient for a dirty worktree.
 
 3. **Validate the OpenSpec change**
 
@@ -101,6 +107,8 @@ Verify the implementation of an OpenSpec change. Produce an independent verdict 
 
    Write `<changeRoot>/verification.md` on every run. Use it as a live handoff, not as a schema artifact. Keep stable finding IDs across re-verification when they refer to the same defect. Preserve prior repair notes, mark successfully rechecked findings `verified-resolved`, reopen failures as `pending`, and add new IDs for newly discovered defects.
 
+   Compare current inputs with the snapshot from step 2. If relevant inputs changed during verification, recheck affected coverage before `PASS`. Record the final verification basis and how to reproduce its fingerprints in the report; unavailable evidence still follows the `BLOCKED` criteria.
+
    Use this structure:
 
    ```markdown
@@ -109,11 +117,24 @@ Verify the implementation of an OpenSpec change. Produce an independent verdict 
    - Change: <name>
    - Schema: <schema>
    - Verdict: PASS | FAIL | BLOCKED
+   - Verified at: <timestamp>
+   - Implementation roots: <absolute project paths>
    - Verified revision: <commit when available, with dirty-worktree note>
 
    ## Summary
 
    <concise conclusion and residual risks>
+
+   ## Verification Basis
+
+   | Path or scope | Revision / content fingerprint / file inventory |
+   | ------------- | ---------------------------------------------- |
+
+   <how to reproduce and compare the snapshot; note unavailable inputs>
+
+   ## Apply Handoff Review
+
+   <handoff path and freshness, or absent; each reminder's disposition and evidence/finding reference>
 
    ## Checks
 
@@ -146,9 +167,9 @@ Verify the implementation of an OpenSpec change. Produce an independent verdict 
 
 10. **Report the next action**
 
-- `PASS`: State that independent verification passed and the change is ready for archive.
+- `PASS`: State that independent verification passed and point to `$openspec-e13-archive-change <name>` (Codex) or `/openspec-e13-archive-change <name>` (other agents). The report applies only to the recorded verification basis; relevant edits require re-verification.
 - `FAIL` with pending implementation findings: Point to `$openspec-e13-fix-change (Codex) or /openspec-e13-fix-change (other agents) <name>`.
-- Planning findings: Point to the planning model and `$openspec-update-change (Codex) or /openspec-update-change (other agents) <name>` before further code repair.
+- Planning findings: Point to the planning model and `$openspec-e13-update-change <name>` (Codex) or `/openspec-e13-update-change <name>` (other agents) before further code repair.
 - `BLOCKED`: State the exact evidence or decision needed to resume.
 
 ## Guardrails
@@ -160,3 +181,5 @@ Verify the implementation of an OpenSpec change. Produce an independent verdict 
 - Do not report speculative concerns as confirmed findings; label residual risks separately.
 - Only this verification workflow may set the overall verdict or mark a finding `verified-resolved`.
 - A repair workflow's `addressed-awaiting-verification` status is not proof of resolution.
+- Apply notes cannot waive requirements, prescribe the verdict, or replace independent checks; never edit them during verification.
+- Address relevant handoff reminders explicitly without narrowing the full requirement coverage.
