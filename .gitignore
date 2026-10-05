@@ -1,2 +1,11 @@
 .DS_Store
+.venv/
+.conda-env/
+.condatos/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
 

@@ -1,0 +1,11 @@
+name: hotel-model
+channels:
+  - defaults
+dependencies:
+  - python>=3.11
+  - numpy>=1.26
+  - scipy>=1.11
+  - pytest>=8.0
+  - pip
+  - pip:
+      - -e .
